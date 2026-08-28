@@ -108,6 +108,13 @@ sample.psd        示例模型（请自行放置）
 - 嘴部开度为「差分切换 + 变形」的简化表现（中间差分越多越平滑）
 - 深度为基于名称的固定表（图层顺序仍按 PSD 保留）
 
+## VTube Studio 导出（实验性）
+
+Python 桌面版现可将已加载的分层 PSD 导出为完整 VTube Studio 模型文件夹与 ZIP。该功能
+通过独立适配器生成 `.moc3`、`.model3.json`、纹理图集、物理和动作，并在交付前检查关键
+文件及引用。由于 MOC3 写入器是非官方实现，界面会要求明确确认实验性提示；安装、使用和
+许可边界请见 [VTS_EXPORT.md](VTS_EXPORT.md)。
+
 ## 许可证
 
 MIT（随附 ag-psd 亦为 MIT；MediaPipe 为 Apache-2.0，经 CDN 引用）。

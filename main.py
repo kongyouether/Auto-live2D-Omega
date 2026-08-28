@@ -22,6 +22,7 @@ import base64
 import json
 import os
 import sys
+from pathlib import Path
 
 # OBS / 屏幕捕获友好化：WebView2 默认在窗口被其它窗口完全遮挡时，会为了省电
 # 停止合成画面，导致 OBS 捕获到黑屏/定格。关闭该“原生窗口遮挡检测”，窗口即便
@@ -56,6 +57,8 @@ if _webview2_runtime:
     webview.settings["WEBVIEW2_RUNTIME_PATH"] = _webview2_runtime
 
 from osf import OpenSeeFaceReceiver
+from stream_server import StreamRelay
+from vts_export import VtsExporter
 
 # ---- configuration (override with environment variables) ----
 OSF_HOST = os.environ.get("AUTO_OSF_HOST", "127.0.0.1")
@@ -83,6 +86,10 @@ def _last_psd_file():
 
 class Api:
     """Native bridge exposed to the JS side as ``window.pywebview.api``."""
+
+    def __init__(self, stream: StreamRelay, exporter: VtsExporter):
+        self.stream = stream
+        self.exporter = exporter
 
     def getOsf(self):
         return osf.snapshot()
@@ -118,22 +125,58 @@ class Api:
             return None
         return base64.b64encode(data).decode("ascii") if data else None
 
+    def getVtsExportStatus(self):
+        return self.exporter.status()
+
+    def exportVts(self, acknowledged=False):
+        try:
+            return self.exporter.export(
+                self.stream.runtime_dir / "current.psd",
+                self.stream.model_name or "model.psd",
+                acknowledged=bool(acknowledged),
+            )
+        except Exception as error:
+            return {"success": False, "error": str(error)}
+
+    def getVtsAnimations(self):
+        try:
+            return self.exporter.animation_previews()
+        except Exception as error:
+            return {"success": False, "error": str(error), "items": []}
+
+    def renderVtsAnimationPreviews(self, force=False):
+        try:
+            return self.exporter.render_animation_previews(force=bool(force))
+        except Exception as error:
+            return {"success": False, "error": str(error), "items": []}
+
 
 def main():
+    project_root = Path(__file__).resolve().parent
+    stream = StreamRelay(
+        project_root,
+        http_port=int(os.environ.get("AUTO_HTTP_PORT", "18765")),
+        ws_port=int(os.environ.get("AUTO_WS_PORT", "18766")),
+    )
+    exporter = VtsExporter(project_root)
+    stream.start()
     osf.start()
     window = webview.create_window(
         "Auto虚拟形象",
-        "index.html",
+        stream.control_url,
         width=1280,
         height=840,
         min_size=(960, 640),
         background_color="#0d0d0f",
-        js_api=Api(),
+        js_api=Api(stream, exporter),
     )
     try:
-        webview.start(http_server=True)
+        print(f"Control UI: {stream.control_url}")
+        print(f"OBS browser source: {stream.overlay_url}")
+        webview.start()
     finally:
         osf.stop()
+        stream.stop()
 
 
 if __name__ == "__main__":

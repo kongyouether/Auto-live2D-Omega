@@ -6,19 +6,16 @@ echo ============================================
 echo  Auto Live2D - launcher
 echo ============================================
 
-echo [setup] Installing dependencies (first run may take a while)...
-python -m pip install --upgrade pip
-if errorlevel 1 goto :err
-python -m pip install -r requirements.txt
-if errorlevel 1 goto :err
+set "PYTHON=%~dp0.venv\Scripts\python.exe"
+if not exist "%PYTHON%" goto :missing_venv
 
 echo.
 echo [run] Starting Auto Live2D...
-python main.py
+"%PYTHON%" main.py
 goto :eof
 
-:err
+:missing_venv
 echo.
-echo [error] Setup failed. Make sure Python 3.10+ is installed and on PATH.
-echo         (run "python --version" to check)
+echo [error] The project virtual environment is missing.
+echo         Run setup_windows.ps1 once, then launch run.bat again.
 pause

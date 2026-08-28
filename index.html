@@ -19,6 +19,19 @@ header span{font-size:11px;color:var(--sub)}
 canvas{max-width:100%;max-height:100%;display:block}
 #fps{position:absolute;left:10px;top:8px;font-size:11px;color:var(--sub)}
 #rigInfo{font-size:10px;color:var(--sub);line-height:1.6;margin-top:16px;padding-top:10px;border-top:1px solid var(--line)}
+#camMonitor{display:none;margin-top:10px;padding:8px;border:1px solid var(--line);border-radius:8px;background:#101012;line-height:1.45}
+#camMonitor.show{display:block}
+#camMonitorHead{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--txt);margin-bottom:6px}
+#camStatus{margin-left:auto;color:var(--sub);font-size:10px;text-align:right}
+#camView{position:relative;width:100%;aspect-ratio:4/3;overflow:hidden;border-radius:6px;background:#09090b}
+#camPreview,#camLandmarks{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
+#camPreview{display:block;background:#09090b;z-index:0}
+#camLandmarks{pointer-events:none;z-index:1}
+#camDeviceName,#camStats{font-size:10px;color:var(--sub);margin-top:5px;word-break:break-word}
+#camDeviceName{color:var(--txt)}
+#camErrorDetail{font-size:9px;color:var(--acc2);margin-top:4px;word-break:break-word}
+#camRetry{display:none;margin-top:7px;padding:4px 9px;font-size:10px}
+#camMonitor.error #camRetry{display:inline-block}
 #drop{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:rgba(20,21,28,.88);z-index:5;text-align:center;padding:20px}
 #drop.hidden{display:none}
 #drop h2{font-size:18px;font-weight:600}
@@ -83,12 +96,32 @@ header h1{letter-spacing:.05em}
 #readmeBody th,#readmeBody td{border:1px solid var(--line);padding:5px 9px}
 #readmeBody blockquote{border-left:3px solid var(--acc);padding:4px 12px;margin:8px 0;color:var(--sub);background:rgba(160,16,48,.06)}
 #readmeBody a{color:var(--acc2)}
+#motionOverlay{position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:60;display:none;align-items:center;justify-content:center;padding:24px}
+#motionOverlay.show{display:flex}
+#motionWin{background:var(--panel);border:1px solid var(--line);border-top:3px solid var(--acc);border-radius:10px;width:95vw;max-width:1400px;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.7)}
+#motionHead{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line)}
+#motionHead b{font-size:13px;white-space:nowrap}
+#motionSelect{min-width:220px;max-width:420px;flex:1;background:#17171a;color:var(--txt);border:1px solid var(--line);border-radius:5px;padding:6px}
+#motionClose{margin-left:auto;cursor:pointer;color:var(--sub);font-size:18px;padding:0 6px}
+#motionClose:hover{color:var(--acc2)}
+#motionMeta{padding:8px 14px;color:var(--sub);font-size:11px;border-bottom:1px solid var(--line)}
+#motionBody{overflow:auto;min-height:300px;padding:14px;background:#101012;text-align:center}
+#motionPreview{display:block;height:260px;max-width:none;margin:auto;background:repeating-conic-gradient(#28282c 0 25%,#202024 0 50%) 0/24px 24px}
+#motionPreview.motion-tall{height:auto;max-width:100%}
 .sec>h2{cursor:pointer;user-select:none}
 .sec>h2::after{content:'▾';float:right;color:var(--sub);font-size:10px;transition:transform .15s}
 .sec.collapsed>h2::after{content:'▸'}
 .sec.collapsed>*:not(h2){display:none}
 #layers .ord{cursor:pointer;color:var(--sub);font-size:10px;padding:0 2px}
 #layers .ord:hover{color:var(--acc2)}
+html.overlay-mode,html.overlay-mode body{width:100%;height:100%;margin:0;background:transparent!important;overflow:hidden}
+html.overlay-mode header,html.overlay-mode #panel,html.overlay-mode #drop,html.overlay-mode #fps{display:none!important}
+html.overlay-mode #main{display:block;width:100vw;height:100vh;background:transparent!important}
+html.overlay-mode #stage{position:fixed;inset:0;width:100vw;height:100vh;background:transparent!important}
+html.overlay-mode #cv{display:block}
+#obsUrl{margin-top:7px;padding:7px;border:1px solid var(--line);border-radius:6px;font-size:10px;line-height:1.5;word-break:break-all;color:var(--sub);user-select:text}
+.vts-ack{display:flex;gap:7px;align-items:flex-start;margin-top:8px;font-size:10px;line-height:1.45;color:var(--sub)}
+.vts-ack input{margin-top:2px;accent-color:var(--acc)}
 </style>
 </head>
 <body>
@@ -131,6 +164,14 @@ header h1{letter-spacing:.05em}
         <div class="tg" id="tgMouse" data-i18n="tgMouse">マウス追従</div>
         <div class="tg" id="tgMic" data-i18n="tgMic">マイク口パク</div>
         <div class="tg on" id="tgPhys" data-i18n="tgPhys">髪の物理</div>
+      </div>
+      <div id="camMonitor" aria-live="polite">
+        <div id="camMonitorHead"><span data-i18n="camMonitorTitle">摄像头面捕监视</span><span id="camStatus"></span></div>
+        <div id="camView"><video id="camPreview" autoplay muted playsinline></video><canvas id="camLandmarks"></canvas></div>
+        <div id="camDeviceName"></div>
+        <div id="camStats"></div>
+        <div id="camErrorDetail"></div>
+        <button class="btn" id="camRetry" data-i18n="camRetry">重试面捕</button>
       </div>
     </div>
     <div class="sec"><h2 data-i18n="secPreset">表情プリセット</h2>
@@ -195,7 +236,13 @@ header h1{letter-spacing:.05em}
       <div class="btns">
         <button class="btn" id="btnReset" data-i18n="btnReset">数値リセット</button>
         <button class="btn" id="btnSavePsd" data-i18n="btnSavePsd">軽量PSDを保存</button>
+        <button class="btn" id="btnCopyObs" data-i18n="btnCopyObs">OBS URLをコピー</button>
+        <button class="btn" id="btnExportVts" data-i18n="btnExportVts">VTube Studioを書き出す</button>
+        <button class="btn" id="btnMotionAudit" data-i18n="btnMotionAudit">書き出しアニメーション監査</button>
       </div>
+      <label class="vts-ack"><input type="checkbox" id="ackVtsExperimental"><span data-i18n="vtsExperimentalAck">実験的な非公式MOC3書き出しであることを理解しました</span></label>
+      <div id="obsUrl"></div>
+      <div id="obsStatus" style="font-size:10px;color:var(--sub);margin-top:4px"></div>
       <div id="utilStatus" style="font-size:11px;color:var(--sub);margin-top:6px"></div>
     </div>
     <div class="sec"><h2 data-i18n="secBg">背景</h2>
@@ -213,12 +260,26 @@ header h1{letter-spacing:.05em}
   <div id="readmeHead"><b>README</b><span id="readmeClose">✕</span></div>
   <div id="readmeBody"></div>
 </div></div>
+<div id="motionOverlay"><div id="motionWin">
+  <div id="motionHead">
+    <b data-i18n="motionAuditTitle">書き出しアニメーション監査（Cubism Core）</b>
+    <select id="motionSelect"></select>
+    <button class="btn" id="btnMotionRefresh" data-i18n="motionRefresh">再生成</button>
+    <span id="motionClose">✕</span>
+  </div>
+  <div id="motionMeta"></div>
+  <div id="motionBody"><img id="motionPreview" alt="Exported motion audit preview"></div>
+</div></div>
 <script src="lib/ag-psd.min.js"></script>
 <script src="lib/rigger.js"></script>
 <script src="lib/genericparts.js"></script>
+<script src="lib/streaming.js"></script>
 <script>
 (function(){
 "use strict";
+
+const STREAM=window.AutoStream;
+const OVERLAY_MODE=!!(STREAM&&STREAM.isOverlay);
 
 // ---------- i18n ----------
 const I18N = {
@@ -305,6 +366,25 @@ const I18N = {
   secUtil:{ja:"ユーティリティ",en:"Utility",zh:"工具"},
   btnReset:{ja:"数値リセット",en:"Reset values",zh:"重置数值"},
   btnSavePsd:{ja:"軽量PSDを保存",en:"Save lightweight PSD",zh:"保存精简PSD"},
+  btnCopyObs:{ja:"OBS URLをコピー",en:"Copy OBS URL",zh:"复制 OBS 地址"},
+  btnExportVts:{ja:"VTube Studioを書き出す",en:"Export VTube Studio",zh:"导出 VTube Studio 模型"},
+  btnMotionAudit:{ja:"書き出しアニメーション監査",en:"Audit exported animations",zh:"审核导出动画"},
+  motionAuditTitle:{ja:"書き出しアニメーション監査（Cubism Core）",en:"Exported animation audit (Cubism Core)",zh:"导出动画审核（Cubism Core）"},
+  motionRefresh:{ja:"再生成",en:"Regenerate",zh:"重新生成"},
+  motionRendering:{ja:"実際のMOC3から全アニメーションの監査画像を生成中…",en:"Rendering every animation from the actual MOC3…",zh:"正在从实际导出的 MOC3 生成全部动画审核图…"},
+  motionReady:{ja:"{n}件のアニメーション監査画像を生成しました",en:"Generated {n} animation audit previews",zh:"已生成 {n} 个动画审核预览"},
+  motionError:{ja:"アニメーション監査エラー: {msg}",en:"Animation audit failed: {msg}",zh:"动画审核失败：{msg}"},
+  motionNoExport:{ja:"先にVTube Studioモデルを書き出してください",en:"Export a VTube Studio model first",zh:"请先导出 VTube Studio 模型"},
+  vtsExperimentalAck:{ja:"実験的な非公式MOC3書き出しであることを理解しました",en:"I understand this uses an experimental, unofficial MOC3 writer",zh:"我了解该功能使用实验性的非官方 MOC3 写入器"},
+  vtsNeedDesktop:{ja:"VTube Studio書き出しはPythonデスクトップ版でのみ利用できます",en:"VTube Studio export requires the Python desktop app",zh:"VTube Studio 导出仅支持 Python 桌面版"},
+  vtsNeedAck:{ja:"実験的MOC3書き出しの確認にチェックしてください",en:"Acknowledge the experimental MOC3 export first",zh:"请先勾选实验性 MOC3 导出确认"},
+  vtsExporting:{ja:"VTube Studioモデルを書き出し中…",en:"Exporting VTube Studio model…",zh:"正在导出 VTube Studio 模型…"},
+  vtsExportDone:{ja:"VTube Studio ZIPを書き出しました: {path}",en:"VTube Studio ZIP exported: {path}",zh:"VTube Studio ZIP 已导出：{path}"},
+  vtsExportErr:{ja:"VTube Studio書き出しエラー: {msg}",en:"VTube Studio export failed: {msg}",zh:"VTube Studio 导出失败：{msg}"},
+  obsConnected:{ja:"配信リレー: 接続済み",en:"Streaming relay: connected",zh:"推流中继：已连接"},
+  obsDisconnected:{ja:"配信リレー: 未接続（Python版で起動してください）",en:"Streaming relay: disconnected (start the Python app)",zh:"推流中继：未连接（请启动 Python 桌面版）"},
+  obsCopied:{ja:"OBS URLをコピーしました",en:"OBS URL copied",zh:"OBS 地址已复制"},
+  obsCopyFailed:{ja:"コピーできませんでした。URLを手動で選択してください",en:"Copy failed; select the URL manually",zh:"复制失败，请手动选择地址"},
 
   secBg:{ja:"背景",en:"Background",zh:"背景"},
   bgChecker:{ja:"透過",en:"Transparent",zh:"透明"},
@@ -328,11 +408,25 @@ const I18N = {
   synthNoteBuiltin:{ja:"差分ソース: 内蔵の汎用差分",en:"Diff source: built-in generic diffs",zh:"差分来源：内置通用差分"},
 
   camPreparing:{ja:"カメラ準備中…",en:"Preparing camera…",zh:"摄像头准备中…"},
+  camModelLoading:{ja:"フェイスメッシュ読込中…",en:"Loading face mesh…",zh:"正在加载面捕模型…"},
   camTracking:{ja:"カメラ追従中",en:"Camera tracking",zh:"摄像头追踪中"},
+  camMonitorTitle:{ja:"カメラ / フェイスメッシュ",en:"Camera / face mesh",zh:"摄像头 / 面部特征点"},
+  camDevice:{ja:"カメラ: {name}",en:"Camera: {name}",zh:"摄像头：{name}"},
+  camDeviceUnknown:{ja:"未取得（許可後に表示）",en:"Unavailable until permission is granted",zh:"授权后显示型号"},
+  camResolution:{ja:"解像度 {w}×{h}",en:"Resolution {w}×{h}",zh:"分辨率 {w}×{h}"},
+  camPoints:{ja:"特徴点 {n} 点",en:"{n} landmarks",zh:"特征点 {n} 个"},
+  camWaitingFace:{ja:"顔待機中",en:"Waiting for a face",zh:"等待检测到人脸"},
+  camReady:{ja:"検出中",en:"Face detected",zh:"已检测到人脸"},
+  camRetry:{ja:"再試行",en:"Retry face tracking",zh:"重试面捕"},
+  camErrorDetail:{ja:"詳細: {msg}",en:"Detail: {msg}",zh:"详情：{msg}"},
   camErrPermission:{ja:"カメラ許可が必要",en:"Camera permission needed",zh:"需要摄像头权限"},
   camErrBusy:{ja:"カメラ使用中(他アプリ)",en:"Camera busy (other app)",zh:"摄像头被占用(其他应用)"},
   camErrNotFound:{ja:"カメラ未検出",en:"No camera found",zh:"未检测到摄像头"},
   camErrCdn:{ja:"モデル読込失敗(通信)",en:"Model load failed (network)",zh:"模型加载失败(网络)"},
+  camErrModelTimeout:{ja:"モデル読込タイムアウト",en:"Face model timed out",zh:"面捕模型加载超时"},
+  camErrModel:{ja:"モデル読込失敗",en:"Face model failed to load",zh:"面捕模型加载失败"},
+  camErrApi:{ja:"カメラAPI非対応",en:"Camera API unavailable",zh:"当前环境不支持摄像头 API"},
+  camErrProcess:{ja:"面捕処理エラー",en:"Face tracking error",zh:"面捕处理错误"},
   camErrHttps:{ja:"httpsが必要",en:"https required",zh:"需要 https"},
   camErrGeneric:{ja:"カメラ不可",en:"Camera unavailable",zh:"摄像头不可用"},
 
@@ -483,7 +577,7 @@ function applyRig(rig){
 
 // ---------- PSD loading ----------
 const dropEl=document.getElementById('drop'), dropStatus=document.getElementById('dropStatus');
-async function loadPsdBuffer(buf){
+async function loadPsdBuffer(buf,fileName){
   try{
     if(!window.agPsd) throw new Error(t('errAgPsd'));
     if(!window.Rigger) throw new Error(t('errRigger'));
@@ -494,6 +588,10 @@ async function loadPsdBuffer(buf){
     lastPsd=psd; lastPre=pre;
     const rig=window.Rigger.buildRig(psd, genericOpts());
     applyRig(rig);
+    if(STREAM&&!OVERLAY_MODE){
+      STREAM.sendModel(buf,fileName||'model.psd');
+      STREAM.publishConfig({order:layers.map(L=>L.name)});
+    }
     if(pre.noisy>0) rigInfoNotes.push(t('preNote',{noisy:pre.noisy, layers:pre.layers}));
     if(rig.synth&&(rig.synth.eye||rig.synth.mouth)) rigInfoNotes.push(customGeneric?t('synthNoteCustom'):t('synthNoteBuiltin'));
     renderRigInfo();
@@ -531,14 +629,14 @@ window.__loadPsdData=function(psd){ lastPre=window.Rigger.cleanPsdLayers(psd); l
 document.getElementById('btnFile').addEventListener('click',()=>document.getElementById('fileInput').click());
 document.getElementById('btnSelectPsd').addEventListener('click',()=>document.getElementById('fileInput').click());
 document.getElementById('fileInput').addEventListener('change',async ev=>{
-  const f=ev.target.files[0]; if(f) loadPsdBuffer(await f.arrayBuffer());
+  const f=ev.target.files[0]; if(f) loadPsdBuffer(await f.arrayBuffer(),f.name);
 });
 document.getElementById('btnSample').addEventListener('click',async ()=>{
   try{
     dropStatus.textContent=t('sampleFetching');
     const r=await fetch('sample.psd');
     if(!r.ok) throw new Error(t('errSample',{status:r.status}));
-    loadPsdBuffer(await r.arrayBuffer());
+    loadPsdBuffer(await r.arrayBuffer(),'sample.psd');
   }catch(err){ dropStatus.textContent=t('errorPrefix')+err.message; }
 });
 (function(){ const miss=[];
@@ -549,7 +647,7 @@ document.getElementById('btnSample').addEventListener('click',async ()=>{
 ['dragleave','drop'].forEach(ev=>window.addEventListener(ev,e=>{ e.preventDefault(); dropEl.classList.remove('dragover'); }));
 window.addEventListener('drop',async e=>{
   const f=e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0];
-  if(f&&/\.psd$/i.test(f.name)){ dropEl.classList.remove('hidden'); loadPsdBuffer(await f.arrayBuffer()); }
+  if(f&&/\.psd$/i.test(f.name)){ dropEl.classList.remove('hidden'); loadPsdBuffer(await f.arrayBuffer(),f.name); }
 });
 
 // ---------- params ----------
@@ -563,6 +661,39 @@ let lastPsd=null, lastPre=null;
 const T = Object.assign({}, P);
 const cur = Object.assign({}, P);
 const auto = { idle:true, blink:true, rand:true, talk:true, mouse:false, mic:false, phys:true, cam:false };
+if(OVERLAY_MODE) Object.assign(auto,{idle:false,blink:false,rand:false,talk:false,mouse:false,mic:false,cam:false,phys:true});
+
+let overlayModelVersion=-1;
+if(STREAM){
+  const obsUrl=`${location.protocol}//${location.hostname}:18765/index.html?overlay=1&wsPort=${STREAM.wsPort}`;
+  const obsUrlEl=document.getElementById('obsUrl');
+  if(obsUrlEl) obsUrlEl.textContent=obsUrl;
+  STREAM.on('status',status=>{
+    const el=document.getElementById('obsStatus');
+    if(el) el.textContent=t(status.connected?'obsConnected':'obsDisconnected');
+  });
+  STREAM.on('state',message=>{
+    if(OVERLAY_MODE&&message.params) Object.assign(T,message.params);
+  });
+  STREAM.on('config',message=>{
+    if(!OVERLAY_MODE||!message.config||!Array.isArray(message.config.order)||!layers.length) return;
+    const order=new Map(message.config.order.map((name,index)=>[name,index]));
+    layers.sort((a,b)=>(order.get(a.name)??9999)-(order.get(b.name)??9999));
+  });
+  STREAM.on('model',async info=>{
+    if(!OVERLAY_MODE||!info||info.version===overlayModelVersion) return;
+    try{
+      overlayModelVersion=info.version;
+      const response=await fetch(`/runtime/current.psd?v=${encodeURIComponent(info.version)}`,{cache:'no-store'});
+      if(!response.ok) throw new Error(`HTTP ${response.status}`);
+      await loadPsdBuffer(await response.arrayBuffer(),info.name||'stream-model.psd');
+      document.getElementById('stage').className='';
+    }catch(error){
+      overlayModelVersion=-1;
+      console.error('overlay model load failed',error);
+    }
+  });
+}
 
 const sliders = { pAngleX:'angleX',pAngleY:'angleY',pAngleZ:'angleZ',pEyeL:'eyeOpenL',pEyeR:'eyeOpenR',
   pEyeX:'eyeX',pEyeY:'eyeY',pBrow:'brow',pMouthOpen:'mouthOpen',pMouthForm:'mouthForm',
@@ -590,7 +721,7 @@ function setSlider(key,val){ for(const id in sliders) if(sliders[id]===key){
 document.getElementById('tgCam').addEventListener('click',()=>{
   auto.cam=!auto.cam;
   document.getElementById('tgCam').classList.toggle('on',auto.cam);
-  if(auto.cam){ turnOffOsf(); initCam(); } else { camState.status='idle'; refreshCamChip(); }
+  if(auto.cam){ turnOffOsf(); initCam(); } else { turnOffCam(); }
 });
 // OpenSeeFace toggle (mutually exclusive with camera)
 document.getElementById('tgOsf').addEventListener('click',()=>{
@@ -636,6 +767,69 @@ document.getElementById('btnSavePsd').addEventListener('click',()=>{
     st.textContent=t('saveDone',{size:(blob.size/1e6).toFixed(1)});
   }catch(err){ st.textContent=t('saveErr')+err.message; }
 });
+document.getElementById('btnCopyObs').addEventListener('click',async()=>{
+  const st=document.getElementById('utilStatus');
+  const value=document.getElementById('obsUrl').textContent;
+  try{ await navigator.clipboard.writeText(value); st.textContent=t('obsCopied'); }
+  catch(error){ st.textContent=t('obsCopyFailed'); }
+});
+document.getElementById('btnExportVts').addEventListener('click',async()=>{
+  const st=document.getElementById('utilStatus');
+  if(!lastPsd){ st.textContent=t('saveFirst'); return; }
+  if(!window.pywebview||!window.pywebview.api){ st.textContent=t('vtsNeedDesktop'); return; }
+  const acknowledged=document.getElementById('ackVtsExperimental').checked;
+  if(!acknowledged){ st.textContent=t('vtsNeedAck'); return; }
+  const button=document.getElementById('btnExportVts');
+  button.disabled=true; st.textContent=t('vtsExporting');
+  try{
+    const result=await window.pywebview.api.exportVts(true);
+    if(!result||!result.success) throw new Error((result&&result.error)||'unknown error');
+    st.textContent=t('vtsExportDone',{path:result.zip});
+  }catch(error){ st.textContent=t('vtsExportErr',{msg:error.message||String(error)}); }
+  finally{ button.disabled=false; }
+});
+let motionAuditItems=[];
+function showSelectedMotion(){
+  const index=Number(document.getElementById('motionSelect').value||0);
+  const item=motionAuditItems[index];
+  const image=document.getElementById('motionPreview');
+  const meta=document.getElementById('motionMeta');
+  if(!item){ image.removeAttribute('src'); meta.textContent=t('motionNoExport'); return; }
+  const detail=!!item.detailPreviewUrl && item.name==='sweep';
+  image.classList.toggle('motion-tall',detail);
+  meta.textContent=`${item.name} · ${item.duration.toFixed(2)}s · ${item.curveCount} curves · ${item.loop?'loop':'once'} · ${detail?'parameter extremes':'5 frames'}`;
+  const preview=detail?item.detailPreviewUrl:item.previewUrl;
+  if(preview) image.src=preview+`?v=${Date.now()}`;
+  else image.removeAttribute('src');
+}
+function setMotionItems(result){
+  motionAuditItems=(result&&result.items)||[];
+  const select=document.getElementById('motionSelect');
+  select.innerHTML=motionAuditItems.map((item,index)=>`<option value="${index}">${item.name}</option>`).join('');
+  document.getElementById('motionOverlay').classList.add('show');
+  showSelectedMotion();
+}
+async function openMotionAudit(force=false){
+  const status=document.getElementById('utilStatus');
+  const button=document.getElementById(force?'btnMotionRefresh':'btnMotionAudit');
+  if(!window.pywebview||!window.pywebview.api){ status.textContent=t('vtsNeedDesktop'); return; }
+  button.disabled=true; status.textContent=t('motionRendering');
+  try{
+    let result=force
+      ? await window.pywebview.api.renderVtsAnimationPreviews(true)
+      : await window.pywebview.api.getVtsAnimations();
+    if(!result||!result.success) throw new Error((result&&result.error)||t('motionNoExport'));
+    if(result.items.some(item=>!item.previewUrl || (item.name==='sweep'&&!item.detailPreviewUrl))) result=await window.pywebview.api.renderVtsAnimationPreviews(false);
+    if(!result||!result.success) throw new Error((result&&result.error)||'unknown error');
+    setMotionItems(result); status.textContent=t('motionReady',{n:result.items.length});
+  }catch(error){ status.textContent=t('motionError',{msg:error.message||String(error)}); }
+  finally{ button.disabled=false; }
+}
+document.getElementById('btnMotionAudit').addEventListener('click',()=>openMotionAudit(false));
+document.getElementById('btnMotionRefresh').addEventListener('click',()=>openMotionAudit(true));
+document.getElementById('motionSelect').addEventListener('change',showSelectedMotion);
+document.getElementById('motionClose').addEventListener('click',()=>document.getElementById('motionOverlay').classList.remove('show'));
+document.getElementById('motionOverlay').addEventListener('click',event=>{ if(event.target.id==='motionOverlay') event.target.classList.remove('show'); });
 let curBg='checker';
 function applyBg(name){
   curBg=name;
@@ -720,6 +914,7 @@ document.getElementById('layers').addEventListener('click',e=>{
   if(j<0||j>=layers.length)return;
   const tmp=layers[i]; layers[i]=layers[j]; layers[j]=tmp;
   renderLayerList();
+  if(STREAM&&!OVERLAY_MODE) STREAM.publishConfig({order:layers.map(L=>L.name)});
 });
 document.querySelectorAll('#panel .sec > h2').forEach(h=>h.addEventListener('click',()=>h.parentNode.classList.toggle('collapsed')));
 
@@ -1092,6 +1287,7 @@ function tick(now){
     micLevel+=(clamp(s*3.2,0,1)-micLevel)*0.45;
     tgt.mouthOpen=Math.max(tgt.mouthOpen,micLevel);
   }
+  if(STREAM&&!OVERLAY_MODE) STREAM.publishState(tgt);
   for(const k in cur) cur[k]+=(tgt[k]-cur[k])*Math.min(1,dt*14);
   const e=Object.assign({},cur);
   camPhysScale+=((trkLive?0.5:1)-camPhysScale)*Math.min(1,dt*4);
