@@ -665,12 +665,13 @@ if(OVERLAY_MODE) Object.assign(auto,{idle:false,blink:false,rand:false,talk:fals
 
 let overlayModelVersion=-1;
 if(STREAM){
-  const obsUrl=`${location.protocol}//${location.hostname}:18765/index.html?overlay=1&wsPort=${STREAM.wsPort}`;
+  const httpPort=location.port||(location.protocol==='https:'?'443':'80');
+  const obsUrl=`${location.protocol}//${location.hostname}:${httpPort}/index.html?overlay=1&wsPort=${STREAM.wsPort}`;
   const obsUrlEl=document.getElementById('obsUrl');
   if(obsUrlEl) obsUrlEl.textContent=obsUrl;
   STREAM.on('status',status=>{
     const el=document.getElementById('obsStatus');
-    if(el) el.textContent=t(status.connected?'obsConnected':'obsDisconnected');
+    if(el){ el.textContent=t(status.connected?'obsConnected':'obsDisconnected'); el.title=status.error||''; }
   });
   STREAM.on('state',message=>{
     if(OVERLAY_MODE&&message.params) Object.assign(T,message.params);

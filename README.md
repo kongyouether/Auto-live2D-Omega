@@ -30,6 +30,21 @@
 - 要求：Microsoft Edge WebView2（Windows 11 已预装）。
 - 启动后弹出桌面窗口，可与浏览器版一样拖入 PSD。
 
+### OBS 透明推流
+
+桌面版会同时启动本地 HTTP 页面和 WebSocket 中继，供 OBS 浏览器源获取模型并接收实时状态。
+必须通过 `run.bat` 启动 Python 桌面版；不要用 `python -m http.server 18765` 代替，否则只能
+打开静态页面，无法提供 WebSocket 流。
+
+1. 双击 `run.bat`，加载 PSD 并等待模型显示。
+2. 在「工具」中点击「复制 OBS 地址」。
+3. 在 OBS 添加「浏览器」源，粘贴地址并保持桌面版运行。
+4. 默认地址为 `http://127.0.0.1:18765/index.html?overlay=1&wsPort=18766`；可访问
+   `http://127.0.0.1:18765/runtime/health` 检查 `http` 与 `websocket` 是否均为 `true`。
+
+若启动时报端口占用，请先关闭旧的静态服务器或其他占用 `18765`/`18766` 的程序，再重新运行
+`run.bat`。启动日志会明确指出冲突的端口。
+
 ### OpenSeeFace 追踪
 
 桌面版在摄像头追踪之外，还支持 OpenSeeFace 追踪（含头部、眨眼、口型与虹膜/眼球视线）。进入 `opennseeface/Binary` 目录，双击运行 `run.bat`：程序会列出摄像头，按提示选择自己的摄像头编号及各项参数（模式、帧率）后即开始追踪。随后回到本应用，在「自动」区块启用 **OpenSeeFace** 开关，即会读取 `127.0.0.1:11573` 的 UDP 数据流并驱动头像。
@@ -94,6 +109,8 @@ lib/rigger.js     自动绑定生成（纯 TypedArray 实现，可在 Node 中�
 lib/ag-psd.min.js PSD 解析器（ag-psd, MIT）
 lib/genericparts.js  通用闭眼/闭口差分（内置回退）
 main.py           Python 桌面版入口（pywebview）
+stream_server.py  本地 HTTP/WebSocket 中继（桌面版与 OBS）
+lib/streaming.js  控制页/OBS 叠加页通信客户端
 requirements.txt  Python 版依赖
 eye_close.psd     闭眼差分原图（可选，可替换）
 mouth_close.psd   闭口差分原图（可选，可替换）

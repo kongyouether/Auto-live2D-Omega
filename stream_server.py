@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 import threading
+from collections.abc import Callable
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -16,8 +17,9 @@ from websockets.asyncio.server import serve
 class _StaticHandler(SimpleHTTPRequestHandler):
     server_version = "AutoLive2DStream/1.0"
 
-    def __init__(self, *args, directory: str, runtime_dir: Path, **kwargs):
+    def __init__(self, *args, directory: str, runtime_dir: Path, health_provider: Callable[[], dict], **kwargs):
         self.runtime_dir = runtime_dir
+        self.health_provider = health_provider
         super().__init__(*args, directory=directory, **kwargs)
 
     def end_headers(self):
@@ -25,7 +27,17 @@ class _StaticHandler(SimpleHTTPRequestHandler):
         super().end_headers()
 
     def do_GET(self):
-        if self.path.split("?", 1)[0] == "/runtime/current.psd":
+        request_path = self.path.split("?", 1)[0]
+        if request_path == "/runtime/health":
+            payload = json.dumps(self.health_provider(), ensure_ascii=False).encode("utf-8")
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+            return
+
+        if request_path == "/runtime/current.psd":
             model_path = self.runtime_dir / "current.psd"
             if not model_path.exists():
                 self.send_error(HTTPStatus.NOT_FOUND, "No model has been loaded yet")
@@ -44,7 +56,17 @@ class _StaticHandler(SimpleHTTPRequestHandler):
             super().log_message(format, *args)
 
 
+class _RelayHTTPServer(ThreadingHTTPServer):
+    # Do not let a second server bind the same port on Windows.  A stale
+    # ``python -m http.server`` must fail loudly instead of winning requests
+    # while the WebSocket relay runs on a different process.
+    allow_reuse_address = False
+    daemon_threads = True
+
+
 class StreamRelay:
+    START_TIMEOUT = 5.0
+
     def __init__(self, project_root: Path, http_port: int = 18765, ws_port: int = 18766):
         self.project_root = project_root.resolve()
         self.runtime_dir = self.project_root / ".runtime"
@@ -55,6 +77,10 @@ class StreamRelay:
         self.http_thread: threading.Thread | None = None
         self.ws_thread: threading.Thread | None = None
         self.ws_loop: asyncio.AbstractEventLoop | None = None
+        self._ws_stop_event: asyncio.Event | None = None
+        self._ws_ready = threading.Event()
+        self._ws_stop_requested = threading.Event()
+        self._ws_error: BaseException | None = None
         self._clients: set = set()
         self._roles: dict = {}
         self._pending_model: dict = {}
@@ -73,26 +99,85 @@ class StreamRelay:
     def model_name(self) -> str:
         return self._model_name
 
+    @property
+    def websocket_ready(self) -> bool:
+        return bool(
+            self._ws_ready.is_set()
+            and self._ws_error is None
+            and self.ws_thread is not None
+            and self.ws_thread.is_alive()
+        )
+
+    def health(self) -> dict:
+        return {
+            "http": bool(self.http_thread and self.http_thread.is_alive()),
+            "websocket": self.websocket_ready,
+            "websocketPort": self.ws_port,
+            "modelReady": (self.runtime_dir / "current.psd").exists(),
+            "modelVersion": self._model_version,
+            "modelName": self._model_name,
+            "error": str(self._ws_error) if self._ws_error else None,
+        }
+
     def start(self):
+        if self.http_server is not None or (self.ws_thread and self.ws_thread.is_alive()):
+            raise RuntimeError("Stream relay is already running")
+
+        self._ws_ready.clear()
+        self._ws_stop_requested.clear()
+        self._ws_error = None
         handler = lambda *args, **kwargs: _StaticHandler(
             *args,
             directory=str(self.project_root),
             runtime_dir=self.runtime_dir,
+            health_provider=self.health,
             **kwargs,
         )
-        self.http_server = ThreadingHTTPServer(("127.0.0.1", self.http_port), handler)
+
+        try:
+            self.http_server = _RelayHTTPServer(("127.0.0.1", self.http_port), handler)
+        except OSError as error:
+            raise RuntimeError(
+                f"Cannot start the HTTP relay on 127.0.0.1:{self.http_port}: {error}. "
+                "Close any old static server and start the app with run.bat."
+            ) from error
+
         self.http_thread = threading.Thread(target=self.http_server.serve_forever, name="auto-live2d-http", daemon=True)
         self.http_thread.start()
 
         self.ws_thread = threading.Thread(target=self._run_ws, name="auto-live2d-ws", daemon=True)
-        self.ws_thread.start()
+        try:
+            self.ws_thread.start()
+            if not self._ws_ready.wait(timeout=self.START_TIMEOUT):
+                raise RuntimeError(
+                    f"WebSocket relay did not become ready on 127.0.0.1:{self.ws_port} "
+                    f"within {self.START_TIMEOUT:.0f} seconds"
+                )
+            if self._ws_error is not None:
+                raise RuntimeError(
+                    f"Cannot start the WebSocket relay on 127.0.0.1:{self.ws_port}: {self._ws_error}"
+                ) from self._ws_error
+        except BaseException:
+            self.stop()
+            raise
 
     def stop(self):
+        self._ws_stop_requested.set()
+
+        loop = self.ws_loop
+        stop_event = self._ws_stop_event
+        if loop and stop_event and not loop.is_closed():
+            loop.call_soon_threadsafe(stop_event.set)
+
         if self.http_server:
-            self.http_server.shutdown()
-            self.http_server.server_close()
-        if self.ws_loop:
-            self.ws_loop.call_soon_threadsafe(self.ws_loop.stop)
+            server = self.http_server
+            self.http_server = None
+            server.shutdown()
+            server.server_close()
+        if self.http_thread and self.http_thread is not threading.current_thread():
+            self.http_thread.join(timeout=self.START_TIMEOUT)
+        if self.ws_thread and self.ws_thread is not threading.current_thread():
+            self.ws_thread.join(timeout=self.START_TIMEOUT)
 
     def _run_ws(self):
         loop = asyncio.new_event_loop()
@@ -100,15 +185,29 @@ class StreamRelay:
         asyncio.set_event_loop(loop)
 
         async def runner():
-            async with serve(self._handle_ws, "127.0.0.1", self.ws_port, max_size=64 * 1024 * 1024):
-                await asyncio.Future()
+            stop_event = asyncio.Event()
+            self._ws_stop_event = stop_event
+            if self._ws_stop_requested.is_set():
+                stop_event.set()
+            try:
+                async with serve(self._handle_ws, "127.0.0.1", self.ws_port, max_size=64 * 1024 * 1024):
+                    self._ws_ready.set()
+                    await stop_event.wait()
+            except BaseException as error:
+                self._ws_error = error
+                self._ws_ready.set()
+                raise
+            finally:
+                self._ws_stop_event = None
 
         try:
             loop.run_until_complete(runner())
-        except RuntimeError as error:
-            if "Event loop stopped" not in str(error):
-                raise
+        except BaseException as error:
+            if self._ws_error is None:
+                self._ws_error = error
+                self._ws_ready.set()
         finally:
+            self.ws_loop = None
             loop.close()
 
     async def _send_status(self, websocket):
