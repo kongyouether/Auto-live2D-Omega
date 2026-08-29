@@ -7,7 +7,7 @@
 </div>
 
 > 本项目基于开源项目 [852wa/Anime2.5DRig](https://github.com/852wa/Anime2.5DRig) 二次开发。
-> 仓库地址：https://github.com/lTwTlol/Auto-live2D-beta
+> 仓库地址：https://github.com/kongyouether/Auto-live2D-Omega
 
 一个 2.5D 头像工具：把分层 PSD 拖进浏览器，即可自动绑定并动起来。
 以往需要手工完成的设置（网格切分、变形、物理）全部自动化。无需安装，全部在客户端本地处理。

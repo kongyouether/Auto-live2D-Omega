@@ -7,7 +7,7 @@
 </div>
 
 > [852wa/Anime2.5DRig](https://github.com/852wa/Anime2.5DRig) をベースに二次開発したものです。
-> 本リポジトリ: https://github.com/lTwTlol/Auto-live2D-beta
+> 本リポジトリ: https://github.com/kongyouether/Auto-live2D-Omega
 
 パーツ分けPSDをブラウザにドロップするだけで、自動リギングされて動き出す 2.5D アバターツールです。
 従来は手作業だったセットアップ（メッシュ分割・変形・物理設定）を自動化します。インストール不要・全処理クライアントサイド。

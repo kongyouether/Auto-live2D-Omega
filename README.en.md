@@ -7,7 +7,7 @@
 </div>
 
 > A derivative of [852wa/Anime2.5DRig](https://github.com/852wa/Anime2.5DRig).
-> This repository: https://github.com/lTwTlol/Auto-live2D-beta
+> This repository: https://github.com/kongyouether/Auto-live2D-Omega
 
 A 2.5D avatar tool that auto-rigs and animates a parts-separated PSD the moment you drop it into the browser.
 Setup that used to be done by hand (mesh splitting, deformation, physics) is fully automated. No install required — everything runs client-side.
