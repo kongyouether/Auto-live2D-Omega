@@ -84,6 +84,27 @@ def _last_psd_file():
     return os.path.join(_data_dir(), "last.psd")
 
 
+def _save_json_atomic(path, data):
+    """Write a settings snapshot without leaving a partially written file."""
+    target = Path(path)
+    temp = target.with_name(f".{target.name}.tmp")
+    try:
+        encoded = json.dumps(data, ensure_ascii=False)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with open(temp, "w", encoding="utf-8") as f:
+            f.write(encoded)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp, target)
+        return True
+    except (OSError, TypeError, ValueError):
+        try:
+            temp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return False
+
+
 class Api:
     """Native bridge exposed to the JS side as ``window.pywebview.api``."""
 
@@ -102,12 +123,7 @@ class Api:
             return {}
 
     def save_settings(self, data):
-        try:
-            with open(_settings_file(), "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False)
-            return True
-        except (OSError, TypeError, ValueError):
-            return False
+        return _save_json_atomic(_settings_file(), data)
 
     def save_last_psd(self, b64):
         try:

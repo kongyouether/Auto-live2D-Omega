@@ -17,6 +17,7 @@ Setup that used to be done by hand (mesh splitting, deformation, physics) is ful
 1. Open `index.html` directly in your browser.
 2. Drop a parts-separated PSD (or click "Load sample.psd").
 3. Auto-rigging runs and it starts moving immediately, with idle motion, blinking, lip-sync and hair physics.
+4. Adjust the sliders and click "Save settings" in Utility; the values are restored on the next launch. Browser mode stores them per site, while desktop mode uses `settings.json`.
 
 > Camera tracking (MediaPipe FaceMesh) and mic lip-sync only work on https or localhost (browser permission policy). Dropping and playback work even when opened directly via file://.
 

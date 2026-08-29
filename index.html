@@ -234,12 +234,14 @@ html.overlay-mode #cv{display:block}
     </div>
     <div class="sec"><h2 data-i18n="secUtil">ユーティリティ</h2>
       <div class="btns">
+        <button class="btn primary" id="btnSaveSettings" data-i18n="btnSaveSettings">保存当前参数</button>
         <button class="btn" id="btnReset" data-i18n="btnReset">数値リセット</button>
         <button class="btn" id="btnSavePsd" data-i18n="btnSavePsd">軽量PSDを保存</button>
         <button class="btn" id="btnCopyObs" data-i18n="btnCopyObs">OBS URLをコピー</button>
         <button class="btn" id="btnExportVts" data-i18n="btnExportVts">VTube Studioを書き出す</button>
         <button class="btn" id="btnMotionAudit" data-i18n="btnMotionAudit">書き出しアニメーション監査</button>
       </div>
+      <div id="settingsStatus" aria-live="polite" style="font-size:10px;color:var(--sub);margin-top:6px"></div>
       <label class="vts-ack"><input type="checkbox" id="ackVtsExperimental"><span data-i18n="vtsExperimentalAck">実験的な非公式MOC3書き出しであることを理解しました</span></label>
       <div id="obsUrl"></div>
       <div id="obsStatus" style="font-size:10px;color:var(--sub);margin-top:4px"></div>
@@ -364,6 +366,10 @@ const I18N = {
   soft:{ja:"後髪柔らかさ",en:"Back hair soft",zh:"后发柔软度"},
 
   secUtil:{ja:"ユーティリティ",en:"Utility",zh:"工具"},
+  btnSaveSettings:{ja:"設定を保存",en:"Save settings",zh:"保存当前参数"},
+  settingsSaved:{ja:"現在の設定を保存しました",en:"Current settings saved",zh:"当前参数已保存"},
+  settingsLoaded:{ja:"前回保存した設定を自動で読み込みました",en:"Last saved settings loaded automatically",zh:"已自动加载上次保存的参数"},
+  settingsSaveErr:{ja:"設定の保存に失敗しました: {msg}",en:"Could not save settings: {msg}",zh:"参数保存失败：{msg}"},
   btnReset:{ja:"数値リセット",en:"Reset values",zh:"重置数值"},
   btnSavePsd:{ja:"軽量PSDを保存",en:"Save lightweight PSD",zh:"保存精简PSD"},
   btnCopyObs:{ja:"OBS URLをコピー",en:"Copy OBS URL",zh:"复制 OBS 地址"},
@@ -706,7 +712,7 @@ const sliders = { pAngleX:'angleX',pAngleY:'angleY',pAngleZ:'angleZ',pEyeL:'eyeO
   pEyeScaleL:'eyeScaleL',pEyeScaleR:'eyeScaleR',pMouthScale:'mouthScale' };
 for(const id in sliders){
   const el=document.getElementById(id), key=sliders[id], v=el.parentNode.querySelector('.val');
-  const upd=()=>{ T[key]=parseFloat(el.value); v.textContent=el.value; saveSettings(); };
+  const upd=()=>{ T[key]=parseFloat(el.value); v.textContent=el.value; if(!settingsApplying) saveSettings(); };
   el.addEventListener('input',upd);
   T[key]=parseFloat(el.value); v.textContent=el.value;
 }
@@ -750,6 +756,7 @@ document.querySelectorAll('[data-preset]').forEach(b=>b.addEventListener('click'
     const p=presets[name]; for(const k in p) setSlider(k,p[k]);
   }
 }));
+document.getElementById('btnSaveSettings').addEventListener('click',()=>saveSettingsNow());
 document.getElementById('btnReset').addEventListener('click',()=>{
   activePreset=null; clearPresetHighlight();
   for(const id in sliders) setSlider(sliders[id], DEFAULTS[sliders[id]]);
@@ -832,14 +839,14 @@ document.getElementById('motionSelect').addEventListener('change',showSelectedMo
 document.getElementById('motionClose').addEventListener('click',()=>document.getElementById('motionOverlay').classList.remove('show'));
 document.getElementById('motionOverlay').addEventListener('click',event=>{ if(event.target.id==='motionOverlay') event.target.classList.remove('show'); });
 let curBg='checker';
-function applyBg(name){
+function applyBg(name,persist=true){
   curBg=name;
   const s=document.getElementById('stage'); s.className='';
   if(name==='checker') s.classList.add('checker');
   if(name==='green') s.classList.add('green');
   if(name==='dark') s.style.background='#14151c'; else s.style.background='';
   document.querySelectorAll('[data-bg]').forEach(b=>b.classList.toggle('active', b.dataset.bg===name));
-  saveSettings();
+  if(persist) saveSettings();
 }
 document.querySelectorAll('[data-bg]').forEach(b=>b.addEventListener('click',()=>applyBg(b.dataset.bg)));
 
@@ -1354,16 +1361,22 @@ function tick(now){
 }
 // ---------- persistence (settings + last PSD across restarts) ----------
 const SETTINGS_KEY='a2drig-settings';
+const SETTINGS_VERSION=2;
 let _skipSave=false, saveTimer=null, _apiReady=null;
+let settingsApplying=false;
+let settingsWriteQueue=Promise.resolve();
 
 function isPy(){
-  return !!(window.pywebview && window.pywebview.api &&
-    typeof window.pywebview.api.get_settings === 'function');
+  const api=window.pywebview&&window.pywebview.api;
+  return !!(api && typeof api.get_settings === 'function' &&
+    typeof api.save_settings === 'function');
 }
 function ensureApiReady(){
   if(!_apiReady){
     _apiReady = new Promise(res=>{
-      if(isPy()){ res(); return; }
+      // Plain browser mode has no bridge to wait for; reading localStorage can
+      // start immediately. Waiting here used to delay restoration by 3 seconds.
+      if(isPy() || !window.pywebview){ res(); return; }
       let settled=false;
       const done=()=>{ if(!settled){ settled=true; res(); } };
       window.addEventListener('pywebviewready', done, {once:true});
@@ -1388,35 +1401,106 @@ async function saveLastPsdBytes(bytes){
   if(!isPy()) return;
   try{ await window.pywebview.api.save_last_psd(bytesToB64(bytes)); }catch(e){}
 }
-function saveSettings(){
-  if(saveTimer) clearTimeout(saveTimer);
-  saveTimer=setTimeout(_writeSettings, 300);
-}
-async function _writeSettings(){
-  const data={
-    lang:CUR_LANG, bg:curBg,
-    params:Object.assign({},T),
-    auto:{idle:auto.idle, blink:auto.blink, rand:auto.rand, talk:auto.talk, mouse:auto.mouse, phys:auto.phys}
+
+function settingsSnapshot(){
+  const params={};
+  for(const key in DEFAULTS){
+    const value=Number(T[key]);
+    params[key]=Number.isFinite(value)?value:DEFAULTS[key];
+  }
+  return {
+    version:SETTINGS_VERSION,
+    lang:CUR_LANG,
+    bg:curBg,
+    params,
+    // Camera/OpenSeeFace are deliberately excluded: restoring them would
+    // request device permissions or start a native receiver on page load.
+    auto:{idle:auto.idle, blink:auto.blink, rand:auto.rand, talk:auto.talk,
+      mouse:auto.mouse, mic:auto.mic, phys:auto.phys}
   };
-  await ensureApiReady();
-  if(isPy()){ try{ await window.pywebview.api.save_settings(data); }catch(e){} }
-  else { try{ localStorage.setItem(SETTINGS_KEY, JSON.stringify(data)); }catch(e){} }
 }
+function hasSavedSettings(s){
+  return !!(s && typeof s==='object' &&
+    (s.params || s.auto || s.bg || s.lang));
+}
+function setSettingsStatus(key,params){
+  const el=document.getElementById('settingsStatus');
+  if(el) el.textContent=t(key,params);
+}
+async function _writeSettings(data){
+  await ensureApiReady();
+  if(isPy()){
+    const ok=await window.pywebview.api.save_settings(data);
+    if(ok===false) throw new Error('desktop storage rejected the settings');
+    return;
+  }
+  localStorage.setItem(SETTINGS_KEY,JSON.stringify(data));
+}
+function enqueueSettingsWrite(data){
+  // Serialize writes so a slower earlier write can never overwrite a newer
+  // slider position or an explicitly saved snapshot.
+  const operation=settingsWriteQueue.then(()=>_writeSettings(data));
+  settingsWriteQueue=operation.catch(error=>{
+    console.warn('settings save failed:',error);
+  });
+  return operation;
+}
+function saveSettings(){
+  if(settingsApplying) return;
+  if(saveTimer) clearTimeout(saveTimer);
+  saveTimer=setTimeout(()=>{
+    saveTimer=null;
+    enqueueSettingsWrite(settingsSnapshot()).catch(()=>{});
+  }, 300);
+}
+async function saveSettingsNow(){
+  if(saveTimer){ clearTimeout(saveTimer); saveTimer=null; }
+  try{
+    await enqueueSettingsWrite(settingsSnapshot());
+    setSettingsStatus('settingsSaved');
+  }catch(error){
+    setSettingsStatus('settingsSaveErr',{msg:error.message||String(error)});
+  }
+}
+function flushBrowserSettings(){
+  if(saveTimer){ clearTimeout(saveTimer); saveTimer=null; }
+  if(window.pywebview) return;
+  try{ localStorage.setItem(SETTINGS_KEY,JSON.stringify(settingsSnapshot())); }catch(e){}
+}
+window.addEventListener('pagehide',flushBrowserSettings);
 async function loadSettings(){
   await ensureApiReady();
   if(isPy()){
-    try{ const d=await window.pywebview.api.get_settings(); if(d && typeof d==='object') return d; }catch(e){}
+    try{
+      const d=await window.pywebview.api.get_settings();
+      if(hasSavedSettings(d)) return d;
+    }catch(e){}
   }
   try{ const raw=localStorage.getItem(SETTINGS_KEY); return raw?JSON.parse(raw):{}; }catch(e){ return {}; }
 }
 function applySettings(s){
-  if(s.params) for(const k in s.params){ if(k in T && k in DEFAULTS){ T[k]=+s.params[k]; setSlider(k,T[k]); } }
-  if(s.auto) for(const k in s.auto){ if(k in auto) auto[k]=!!s.auto[k]; }
-  [['tgIdle','idle'],['tgBlink','blink'],['tgRand','rand'],['tgTalk','talk'],['tgMouse','mouse'],['tgMic','mic'],['tgPhys','phys']].forEach(([id,key])=>{
-    document.getElementById(id).classList.toggle('on', auto[key]);
-  });
-  if(s.bg) applyBg(s.bg);
-  Object.assign(cur, T);
+  settingsApplying=true;
+  try{
+    if(s.params) for(const k in s.params){
+      if(!(k in T) || !(k in DEFAULTS)) continue;
+      const value=Number(s.params[k]);
+      if(!Number.isFinite(value)) continue;
+      let min=-Infinity,max=Infinity;
+      for(const id in sliders) if(sliders[id]===k){
+        const el=document.getElementById(id);
+        min=Number(el.min); max=Number(el.max); break;
+      }
+      setSlider(k,Math.min(max,Math.max(min,value)));
+    }
+    if(s.auto) for(const k in s.auto){ if(k in auto && k!=='cam') auto[k]=!!s.auto[k]; }
+    [['tgIdle','idle'],['tgBlink','blink'],['tgRand','rand'],['tgTalk','talk'],['tgMouse','mouse'],['tgMic','mic'],['tgPhys','phys']].forEach(([id,key])=>{
+      document.getElementById(id).classList.toggle('on', auto[key]);
+    });
+    if(s.bg==='checker'||s.bg==='green'||s.bg==='dark') applyBg(s.bg,false);
+    Object.assign(cur, T);
+  }finally{
+    settingsApplying=false;
+  }
 }
 async function autoLoadLastPsd(){
   await ensureApiReady();
@@ -1432,6 +1516,7 @@ async function init(){
   if(s.lang==='ja'||s.lang==='en'||s.lang==='zh'){ if(s.lang!==CUR_LANG){ CUR_LANG=s.lang; applyLang(); } }
   applySettings(s);
   await autoLoadLastPsd();
+  if(hasSavedSettings(s)) setSettingsStatus('settingsLoaded');
 }
 init();
 requestAnimationFrame(tick);
